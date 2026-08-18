@@ -234,8 +234,7 @@ const PASSWORD_HASH = '991aaeef5b49a061b611ae34e68546c9f6549672489da40b58d37541e
 // TOKEN: a GitHub PAT with `actions:write` scope on the PUBLIC repo only.
 //        Store it here — it only has permission to trigger workflows, nothing else.
 //        Anyone who views source can see it, so scope it tightly (actions:write only).
-const GITHUB_REPO   = 'zeus66033/shikigami-public';  // ← fill in
-const GITHUB_TOKEN  = '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';
+const WORKER_URL = 'https://shikigami-dispatch.zeus66033.workers.dev';
 // ──────────────────────────────────────────────────────────────────
 
 async function sha256hex(str) {
@@ -279,48 +278,20 @@ document.getElementById('lockBtn').onclick = () => {
 // Dispatch workflow
 document.getElementById('launchBtn').onclick = launch;
 
-async function launch() {
-  const btn = document.getElementById('launchBtn');
-  const msg = document.getElementById('launchMsg');
-  const task = document.getElementById('taskSelect').value;
-  const duration = Math.min(120, Math.max(1, parseInt(document.getElementById('durationInput').value) || 120));
-
-  btn.disabled = true;
-  msg.className = 'msg';
-  msg.textContent = 'Dispatching…';
-
-  try {
-    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/bot.yml/dispatches`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `token ${GITHUB_TOKEN}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/vnd.github+json',
-      },
-      body: JSON.stringify({
-        ref: 'main',
-        inputs: { task, duration_minutes: String(duration) },
-      }),
-    });
-
-    if (res.status === 204) {
-      msg.className = 'msg ok';
-      msg.textContent = '✓ Bot dispatched — check the panel in ~30s.';
-      logLine(`Dispatched: task=${task}, duration=${duration}min`);
-    } else {
-      const body = await res.text().catch(() => '');
-      msg.className = 'msg error';
-      msg.textContent = `Dispatch failed (${res.status}). Check GITHUB_REPO and GITHUB_TOKEN in index.html.`;
-      logLine(`Error ${res.status}: ${body}`);
-    }
-  } catch (e) {
-    msg.className = 'msg error';
-    msg.textContent = 'Network error: ' + e.message;
-  } finally {
-    btn.disabled = false;
-  }
+const res = await fetch(WORKER_URL, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ task, duration_minutes: duration }),
+});
+const data = await res.json();
+if (data.status === 204) {
+  msg.className = 'msg ok';
+  msg.textContent = '✓ Bot dispatched — check the panel in ~30s.';
+  logLine(`Dispatched: task=${task}, duration=${duration}min`);
+} else {
+  msg.className = 'msg error';
+  msg.textContent = `Dispatch failed (${data.status}). Check Worker logs.`;
 }
-
 function logLine(text) {
   const el = document.getElementById('runLog');
   const ts = new Date().toLocaleTimeString();
@@ -329,7 +300,7 @@ function logLine(text) {
 
 // Status — reads the same Gist that tunnel-reporter.js writes
 // Gist ID must match what's in your GitHub Actions secret.
-const GIST_ID = 'de6e14e504678cad95fd9e87b827ffe7'; // ← fill in (public gist, no token needed to read)
+const GIST_ID    = 'de6e14e504678cad95fd9e87b827ffe7';
 
 async function checkStatus() {
   if (!GIST_ID || GIST_ID === 'YOUR_GIST_ID') {
