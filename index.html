@@ -223,7 +223,6 @@
 
 <script>
 // ── Configuration ──────────────────────────────────────────────────
-// Password hash: SHA-256 of "Swr_4590"
 // To change the password, run this in a browser console:
 //   crypto.subtle.digest('SHA-256', new TextEncoder().encode('YourNewPassword'))
 //     .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
@@ -235,8 +234,8 @@ const PASSWORD_HASH = '991aaeef5b49a061b611ae34e68546c9f6549672489da40b58d37541e
 // TOKEN: a GitHub PAT with `actions:write` scope on the PUBLIC repo only.
 //        Store it here — it only has permission to trigger workflows, nothing else.
 //        Anyone who views source can see it, so scope it tightly (actions:write only).
-const GITHUB_REPO   = 'YOUR_USERNAME/shikigami-cloud';  // ← fill in
-const GITHUB_TOKEN  = 'YOUR_ACTIONS_DISPATCH_TOKEN';    // ← fill in
+const GITHUB_REPO   = 'zeus66033/shikigami-public';  // ← fill in
+const GITHUB_TOKEN  = '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';    // ← fill in
 // ──────────────────────────────────────────────────────────────────
 
 async function sha256hex(str) {
@@ -330,7 +329,7 @@ function logLine(text) {
 
 // Status — reads the same Gist that tunnel-reporter.js writes
 // Gist ID must match what's in your GitHub Actions secret.
-const GIST_ID = 'YOUR_GIST_ID'; // ← fill in (public gist, no token needed to read)
+const GIST_ID = 'de6e14e504678cad95fd9e87b827ffe7'; // ← fill in (public gist, no token needed to read)
 
 async function checkStatus() {
   if (!GIST_ID || GIST_ID === 'YOUR_GIST_ID') {
