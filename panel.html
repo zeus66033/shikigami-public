@@ -241,15 +241,13 @@
      To find your IP visit: https://api.ipify.org -->
 <div id="tunnelConfirm">
   <div class="card">
-    <h3>🔒 Tunnel Access Required</h3>
-    <p>localtunnel's free tier requires you to confirm your public IP before accessing the panel. This only appears once per session.</p>
+    <h3>🔒 Panel Ready</h3>
+    <p>The bot is online. Click below to open the panel in a new tab. localtunnel will ask you to confirm your public IP once — your IP has been auto-filled below for reference.</p>
     <div class="url-display" id="confirmTunnelUrl">—</div>
-    <p class="confirm-hint">
-      Your public IP (visit <a href="https://api.ipify.org" target="_blank" style="color:var(--seal)">api.ipify.org</a> to find it):
-    </p>
-    <input type="text" id="confirmIpInput" placeholder="e.g. 203.0.113.42">
-    <button class="btn btn-seal" id="confirmIpBtn">Confirm &amp; Open Panel</button>
-    <button class="btn btn-ghost" id="skipConfirmBtn">Skip — open in new tab instead</button>
+    <p class="confirm-hint">Your public IP (pre-filled automatically — paste this into the loca.lt confirm page):</p>
+    <input type="text" id="confirmIpInput" placeholder="detecting…" readonly>
+    <button class="btn btn-seal" id="confirmIpBtn">Open Panel in New Tab ↗</button>
+    <button class="btn btn-ghost" id="skipConfirmBtn">Dismiss</button>
   </div>
 </div>
 
@@ -341,97 +339,39 @@ async function checkTunnel() {
   }
 }
 
-// ── Panel loading + localtunnel bypass ───────────────────────────
-// localtunnel free tier shows a confirmation page asking for your public IP.
-// We handle this by:
-//   1. Probing the tunnel URL with the bypass header first.
-//   2. If it comes back as the confirm page (status 200 but not our panel),
-//      we show the overlay so the user can enter their IP.
-//   3. The confirm button hits the tunnel's /?request=bypass&ip=X endpoint
-//      which sets a cookie, then we load the iframe normally.
+// ── Panel loading ─────────────────────────────────────────────────
+// localtunnel free tier blocks cross-origin requests and iframes via
+// X-Frame-Options, so we can't embed the panel. Instead we show a
+// styled card with the tunnel URL and a button to open it directly.
+// The user visits the URL in a new tab, clicks through the localtunnel
+// IP confirm page once, and the panel loads normally.
 
-async function loadPanel(url) {
+function loadPanel(url) {
   if (url === currentUrl) return;
   currentUrl = url;
-
-  // Try probing the URL with the bypass header
-  try {
-    const probe = await fetch(url, {
-      method: 'GET',
-      headers: { 'bypass-tunnel-reminder': 'true' },
-      // No credentials/cookies on probe — just checking reachability
-    });
-
-    if (probe.ok) {
-      const text = await probe.text();
-      // localtunnel confirm page always contains this string
-      if (text.includes('Tunnel Password') || text.includes('tunnelpassword') || text.includes('loca.lt/confirm')) {
-        // Show our IP confirm overlay instead of the raw localtunnel page
-        showTunnelConfirm(url);
-        return;
-      }
-    }
-  } catch (_) {
-    // Probe failed (likely CORS) — fall through to iframe directly
-    // The bypass header attempt in iframe src won't work due to browser limits,
-    // so we show the confirm overlay preemptively
-    showTunnelConfirm(url);
-    return;
-  }
-
-  // Probe passed — load iframe directly
-  loadIframe(url);
+  showTunnelConfirm(url);
 }
 
-function loadIframe(url) {
-  const frame = document.getElementById('panelFrame');
-  const placeholder = document.getElementById('placeholder');
-
-  frame.onload = () => {
-    placeholder.style.display = 'none';
-    frame.style.display = 'block';
-  };
-  frame.onerror = () => showDirectLink(url);
-
-  frame.src = url;
-
-  setTimeout(() => {
-    if (frame.style.display === 'none') showDirectLink(url);
-  }, 6000);
-
-  document.getElementById('openDirect').href = url;
-  document.getElementById('openDirect').style.display = 'inline-block';
-}
-
-// ── Tunnel confirm overlay ────────────────────────────────────────
 function showTunnelConfirm(url) {
   document.getElementById('confirmTunnelUrl').textContent = url;
   document.getElementById('tunnelConfirm').classList.add('show');
 
-  // Auto-fetch user's IP to pre-fill
+  // Auto-fetch public IP to pre-fill the hint
   fetch('https://api.ipify.org?format=json')
     .then(r => r.json())
     .then(d => { document.getElementById('confirmIpInput').value = d.ip || ''; })
     .catch(() => {});
 }
 
-document.getElementById('confirmIpBtn').onclick = async () => {
-  const ip = document.getElementById('confirmIpInput').value.trim();
-  if (!ip) { alert('Please enter your public IP.'); return; }
+document.getElementById('confirmIpBtn').onclick = () => {
   const url = currentUrl;
-
-  // Hit the localtunnel bypass endpoint — this sets the cookie that skips the confirm page
-  try {
-    await fetch(`${url}/?request=bypass&ip=${encodeURIComponent(ip)}`, {
-      method: 'GET',
-      mode: 'no-cors', // localtunnel won't send CORS headers on this endpoint
-    });
-  } catch (_) {}
-
   document.getElementById('tunnelConfirm').classList.remove('show');
-
-  // Small delay for cookie to propagate, then load iframe
-  setTimeout(() => loadIframe(url), 800);
+  // Open the panel in a new tab — user clicks through the loca.lt IP page once
+  window.open(url, '_blank');
+  // Show a "panel opened" placeholder with the direct link as fallback
+  showPlaceholder('Panel opened in new tab. If it asked for your IP, enter it and the panel will load.');
+  document.getElementById('openDirect').href = url;
+  document.getElementById('openDirect').style.display = 'inline-block';
 };
 
 document.getElementById('skipConfirmBtn').onclick = () => {
