@@ -29,7 +29,6 @@
     flex-direction: column;
   }
 
-  /* ── Gate overlay ── */
   #gate {
     display: flex;
     align-items: center;
@@ -79,11 +78,17 @@
   }
   .btn-seal { background: var(--seal); color: #1a1400; }
   .btn-seal:hover { box-shadow: 0 0 18px var(--seal-glow); }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--paper-line);
+    color: var(--text-dim);
+    margin-top: 10px;
+  }
+  .btn-ghost:hover { border-color: var(--seal); color: var(--seal); }
   .msg { font-size: 12px; text-align: center; margin-top: 14px; min-height: 18px; }
   .msg.error { color: var(--danger); }
   .msg.ok { color: var(--jade); }
 
-  /* ── Panel wrapper (shown after auth) ── */
   #wrapper { display: none; flex-direction: column; height: 100%; }
 
   .topbar {
@@ -110,7 +115,6 @@
   }
   .topbar a:hover, .topbar button.link:hover { color: var(--seal); }
 
-  /* The iframe fills remaining height */
   #panelFrame {
     flex: 1;
     border: none;
@@ -118,7 +122,6 @@
     background: var(--ink);
   }
 
-  /* Offline / loading placeholder shown instead of frame */
   #placeholder {
     flex: 1;
     display: flex;
@@ -128,6 +131,8 @@
     color: var(--text-dim);
     gap: 12px;
     font-size: 14px;
+    text-align: center;
+    padding: 20px;
   }
   #placeholder .kanji { font-size: 48px; font-family: serif; color: var(--paper-line); }
   #placeholder .detail { font-size: 12px; font-family: var(--mono); color: var(--text-dim); }
@@ -144,6 +149,47 @@
     transition: border-color 0.15s;
   }
   #openDirect:hover { border-color: var(--seal); }
+
+  /* ── Tunnel confirm overlay ── */
+  #tunnelConfirm {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(11,13,18,0.92);
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  #tunnelConfirm.show { display: flex; }
+  #tunnelConfirm .card { max-width: 380px; }
+  #tunnelConfirm h3 { color: var(--seal); font-size: 15px; margin-bottom: 10px; }
+  #tunnelConfirm p { font-size: 12px; color: var(--text-dim); margin-bottom: 16px; line-height: 1.6; }
+  #tunnelConfirm .url-display {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--paper-raised);
+    border: 1px solid var(--paper-line);
+    border-radius: 4px;
+    padding: 8px 10px;
+    color: var(--seal);
+    word-break: break-all;
+    margin-bottom: 16px;
+  }
+  #confirmIpInput {
+    width: 100%;
+    background: var(--paper-raised);
+    border: 1px solid var(--paper-line);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 9px 11px;
+    outline: none;
+    margin-bottom: 12px;
+    transition: border-color 0.15s;
+  }
+  #confirmIpInput:focus { border-color: var(--seal); }
+  .confirm-hint { font-size: 11px; color: var(--text-dim); margin-bottom: 14px; line-height: 1.5; }
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -189,12 +235,34 @@
   <iframe id="panelFrame" title="Shikigami Admin Panel" style="display:none;"></iframe>
 </div>
 
+<!-- ── LOCALTUNNEL CONFIRM OVERLAY ── -->
+<!-- localtunnel free tier shows a "confirm your IP" page before letting through.
+     This overlay handles that — enter your public IP and it bypasses it.
+     To find your IP visit: https://api.ipify.org -->
+<div id="tunnelConfirm">
+  <div class="card">
+    <h3>🔒 Tunnel Access Required</h3>
+    <p>localtunnel's free tier requires you to confirm your public IP before accessing the panel. This only appears once per session.</p>
+    <div class="url-display" id="confirmTunnelUrl">—</div>
+    <p class="confirm-hint">
+      Your public IP (visit <a href="https://api.ipify.org" target="_blank" style="color:var(--seal)">api.ipify.org</a> to find it):
+    </p>
+    <input type="text" id="confirmIpInput" placeholder="e.g. 203.0.113.42">
+    <button class="btn btn-seal" id="confirmIpBtn">Confirm &amp; Open Panel</button>
+    <button class="btn btn-ghost" id="skipConfirmBtn">Skip — open in new tab instead</button>
+  </div>
+</div>
+
 <script>
 // ── Config ────────────────────────────────────────────────────────
-const PASSWORD_HASH = '991aaeef5b49a061b611ae34e68546c9f6549672489da40b58d37541e157cf65';
-const GIST_ID = 'de6e14e504678cad95fd9e87b827ffe7';
-const POLL_INTERVAL_MS = 30 * 1000; // re-check tunnel URL every 30s
+const PASSWORD_HASH  = '991aaeef5b49a061b611ae34e68546c9f6549672489da40b58d37541e157cf65';
+const GIST_ID        = 'de6e14e504678cad95fd9e87b827ffe7';
+const POLL_INTERVAL_MS = 30 * 1000;
 // ─────────────────────────────────────────────────────────────────
+
+// Declare these first so the sessionStorage restore block below can call startPolling safely
+let pollTimer  = null;
+let currentUrl = null;
 
 async function sha256hex(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str || ''));
@@ -237,23 +305,13 @@ document.getElementById('lockBtn').onclick = () => {
 document.getElementById('refreshBtn').onclick = () => checkTunnel();
 
 // ── Tunnel polling ────────────────────────────────────────────────
-let pollTimer = null;
-let currentUrl = null;
-
 function startPolling() {
   checkTunnel();
   pollTimer = setInterval(checkTunnel, POLL_INTERVAL_MS);
 }
 
 async function checkTunnel() {
-  if (!GIST_ID || GIST_ID === 'YOUR_GIST_ID') {
-    setStatus('error', 'GIST_ID not configured in panel.html');
-    showPlaceholder('Edit panel.html and set GIST_ID.');
-    return;
-  }
-
   try {
-    // Cache-bust so we always get fresh Gist content
     const res = await fetch(`https://api.github.com/gists/${GIST_ID}?t=${Date.now()}`, {
       headers: { 'Accept': 'application/vnd.github+json' },
     });
@@ -283,44 +341,110 @@ async function checkTunnel() {
   }
 }
 
-function loadPanel(url) {
-  if (url === currentUrl) return; // already loaded, don't reload
+// ── Panel loading + localtunnel bypass ───────────────────────────
+// localtunnel free tier shows a confirmation page asking for your public IP.
+// We handle this by:
+//   1. Probing the tunnel URL with the bypass header first.
+//   2. If it comes back as the confirm page (status 200 but not our panel),
+//      we show the overlay so the user can enter their IP.
+//   3. The confirm button hits the tunnel's /?request=bypass&ip=X endpoint
+//      which sets a cookie, then we load the iframe normally.
+
+async function loadPanel(url) {
+  if (url === currentUrl) return;
   currentUrl = url;
 
+  // Try probing the URL with the bypass header
+  try {
+    const probe = await fetch(url, {
+      method: 'GET',
+      headers: { 'bypass-tunnel-reminder': 'true' },
+      // No credentials/cookies on probe — just checking reachability
+    });
+
+    if (probe.ok) {
+      const text = await probe.text();
+      // localtunnel confirm page always contains this string
+      if (text.includes('Tunnel Password') || text.includes('tunnelpassword') || text.includes('loca.lt/confirm')) {
+        // Show our IP confirm overlay instead of the raw localtunnel page
+        showTunnelConfirm(url);
+        return;
+      }
+    }
+  } catch (_) {
+    // Probe failed (likely CORS) — fall through to iframe directly
+    // The bypass header attempt in iframe src won't work due to browser limits,
+    // so we show the confirm overlay preemptively
+    showTunnelConfirm(url);
+    return;
+  }
+
+  // Probe passed — load iframe directly
+  loadIframe(url);
+}
+
+function loadIframe(url) {
   const frame = document.getElementById('panelFrame');
   const placeholder = document.getElementById('placeholder');
-  const openDirect = document.getElementById('openDirect');
 
-  // Try loading in iframe; localtunnel sometimes blocks iframes (X-Frame-Options).
-  // In that case we show a "open in new tab" fallback.
   frame.onload = () => {
-    // If the frame loaded something (even an error page), show it
     placeholder.style.display = 'none';
     frame.style.display = 'block';
   };
-  frame.onerror = () => {
-    // Blocked — fall back to direct link
-    showDirectLink(url);
-  };
+  frame.onerror = () => showDirectLink(url);
 
   frame.src = url;
 
-  // Fallback: if frame hasn't loaded in 6s, offer direct link
   setTimeout(() => {
     if (frame.style.display === 'none') showDirectLink(url);
   }, 6000);
 
-  openDirect.href = url;
-  openDirect.style.display = 'inline-block';
+  document.getElementById('openDirect').href = url;
+  document.getElementById('openDirect').style.display = 'inline-block';
 }
 
+// ── Tunnel confirm overlay ────────────────────────────────────────
+function showTunnelConfirm(url) {
+  document.getElementById('confirmTunnelUrl').textContent = url;
+  document.getElementById('tunnelConfirm').classList.add('show');
+
+  // Auto-fetch user's IP to pre-fill
+  fetch('https://api.ipify.org?format=json')
+    .then(r => r.json())
+    .then(d => { document.getElementById('confirmIpInput').value = d.ip || ''; })
+    .catch(() => {});
+}
+
+document.getElementById('confirmIpBtn').onclick = async () => {
+  const ip = document.getElementById('confirmIpInput').value.trim();
+  if (!ip) { alert('Please enter your public IP.'); return; }
+  const url = currentUrl;
+
+  // Hit the localtunnel bypass endpoint — this sets the cookie that skips the confirm page
+  try {
+    await fetch(`${url}/?request=bypass&ip=${encodeURIComponent(ip)}`, {
+      method: 'GET',
+      mode: 'no-cors', // localtunnel won't send CORS headers on this endpoint
+    });
+  } catch (_) {}
+
+  document.getElementById('tunnelConfirm').classList.remove('show');
+
+  // Small delay for cookie to propagate, then load iframe
+  setTimeout(() => loadIframe(url), 800);
+};
+
+document.getElementById('skipConfirmBtn').onclick = () => {
+  document.getElementById('tunnelConfirm').classList.remove('show');
+  showDirectLink(currentUrl);
+};
+
+// ── Helpers ───────────────────────────────────────────────────────
 function showDirectLink(url) {
-  const frame = document.getElementById('panelFrame');
-  frame.style.display = 'none';
+  document.getElementById('panelFrame').style.display = 'none';
   const placeholder = document.getElementById('placeholder');
-  const detail = document.getElementById('placeholderDetail');
   placeholder.style.display = 'flex';
-  detail.textContent = 'Iframe blocked by tunnel — open directly:';
+  document.getElementById('placeholderDetail').textContent = 'Iframe blocked — open directly:';
   document.getElementById('openDirect').href = url;
   document.getElementById('openDirect').style.display = 'inline-block';
 }
