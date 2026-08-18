@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>式神 · Remote Panel</title>
+<style>
+  :root {
+    --ink: #0b0d12;
+    --paper: #12151c;
+    --paper-raised: #171b24;
+    --paper-line: #262b38;
+    --text: #e7e5df;
+    --text-dim: #8a8f9e;
+    --seal: #eedc82;
+    --seal-glow: rgba(238,220,130,0.25);
+    --jade: #4c9a7c;
+    --danger: #c1392b;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter', -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--ink);
+    color: var(--text);
+    font-family: var(--sans);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Gate overlay ── */
+  #gate {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    background: radial-gradient(ellipse 900px 500px at 50% -10%, rgba(76,154,124,0.07), transparent), var(--ink);
+  }
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--paper-line);
+    border-radius: 12px;
+    padding: 40px 36px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  }
+  .logo { text-align: center; margin-bottom: 32px; }
+  .logo .kanji { font-size: 42px; color: var(--seal); text-shadow: 0 0 24px var(--seal-glow); font-family: serif; }
+  .logo .sub { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); margin-top: 8px; }
+
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
+  .field input {
+    width: 100%;
+    background: var(--paper-raised);
+    border: 1px solid var(--paper-line);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus { border-color: var(--seal); }
+  .btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 6px;
+    border: none;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: opacity 0.15s, box-shadow 0.15s;
+  }
+  .btn-seal { background: var(--seal); color: #1a1400; }
+  .btn-seal:hover { box-shadow: 0 0 18px var(--seal-glow); }
+  .msg { font-size: 12px; text-align: center; margin-top: 14px; min-height: 18px; }
+  .msg.error { color: var(--danger); }
+  .msg.ok { color: var(--jade); }
+
+  /* ── Panel wrapper (shown after auth) ── */
+  #wrapper { display: none; flex-direction: column; height: 100%; }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 14px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--paper-line);
+    flex-shrink: 0;
+    font-size: 12px;
+  }
+  .topbar .title { font-family: serif; color: var(--seal); font-size: 16px; margin-right: 4px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; }
+  .dot.live { background: var(--jade); box-shadow: 0 0 6px var(--jade); }
+  .dot.error { background: var(--danger); }
+  #connStatus { color: var(--text-dim); }
+  .topbar-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .topbar a, .topbar button.link {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-dim); font-size: 12px; font-family: var(--sans);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .topbar a:hover, .topbar button.link:hover { color: var(--seal); }
+
+  /* The iframe fills remaining height */
+  #panelFrame {
+    flex: 1;
+    border: none;
+    width: 100%;
+    background: var(--ink);
+  }
+
+  /* Offline / loading placeholder shown instead of frame */
+  #placeholder {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    gap: 12px;
+    font-size: 14px;
+  }
+  #placeholder .kanji { font-size: 48px; font-family: serif; color: var(--paper-line); }
+  #placeholder .detail { font-size: 12px; font-family: var(--mono); color: var(--text-dim); }
+  #openDirect {
+    display: none;
+    padding: 8px 18px;
+    background: var(--paper-raised);
+    border: 1px solid var(--paper-line);
+    border-radius: 6px;
+    color: var(--seal);
+    text-decoration: none;
+    font-size: 13px;
+    margin-top: 6px;
+    transition: border-color 0.15s;
+  }
+  #openDirect:hover { border-color: var(--seal); }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- ── GATE ── -->
+<div id="gate">
+  <div class="card">
+    <div class="logo">
+      <div class="kanji">式神</div>
+      <div class="sub">Remote Panel · Auth</div>
+    </div>
+    <div class="field">
+      <label>Panel Password</label>
+      <input type="password" id="gatePassword" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-seal" id="gateBtn">Enter Panel</button>
+    <div class="msg" id="gateMsg"></div>
+  </div>
+</div>
+
+<!-- ── PANEL WRAPPER ── -->
+<div id="wrapper">
+  <div class="topbar">
+    <span class="title">式神</span>
+    <span>Remote Panel</span>
+    <div class="dot" id="dot"></div>
+    <span id="connStatus">Locating tunnel…</span>
+    <div class="topbar-right">
+      <a href="index.html">← Launcher</a>
+      <button class="link" id="refreshBtn">Refresh</button>
+      <button class="link" id="lockBtn">Lock</button>
+    </div>
+  </div>
+
+  <div id="placeholder">
+    <div class="kanji">霊</div>
+    <div>Bot is not currently online</div>
+    <div class="detail" id="placeholderDetail">Looking up tunnel URL…</div>
+    <a id="openDirect" href="#" target="_blank">Open panel in new tab ↗</a>
+  </div>
+  <iframe id="panelFrame" title="Shikigami Admin Panel" style="display:none;"></iframe>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────
+// Same password as Site A (Swr_4590 by default)
+const PASSWORD_HASH = '991aaeef5b49a061b611ae34e68546c9f6549672489da40b58d37541e157cf65';
+const GIST_ID = 'YOUR_GIST_ID'; // ← same as index.html — fill in
+const POLL_INTERVAL_MS = 30 * 1000; // re-check tunnel URL every 30s
+// ─────────────────────────────────────────────────────────────────
+
+async function sha256hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str || ''));
+  return [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+// ── Gate ──────────────────────────────────────────────────────────
+document.getElementById('gateBtn').onclick = unlock;
+document.getElementById('gatePassword').addEventListener('keydown', e => { if (e.key === 'Enter') unlock(); });
+
+async function unlock() {
+  const pw = document.getElementById('gatePassword').value || 'Swr_4590';
+  const hash = await sha256hex(pw);
+  if (hash === PASSWORD_HASH) {
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('wrapper').style.display = 'flex';
+    sessionStorage.setItem('shiki-panel-unlocked', '1');
+    startPolling();
+  } else {
+    const msg = document.getElementById('gateMsg');
+    msg.className = 'msg error';
+    msg.textContent = 'Incorrect password.';
+  }
+}
+
+if (sessionStorage.getItem('shiki-panel-unlocked')) {
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('wrapper').style.display = 'flex';
+  startPolling();
+}
+
+document.getElementById('lockBtn').onclick = () => {
+  sessionStorage.removeItem('shiki-panel-unlocked');
+  clearInterval(pollTimer);
+  document.getElementById('wrapper').style.display = 'none';
+  document.getElementById('gate').style.display = 'flex';
+  document.getElementById('gatePassword').value = '';
+};
+
+document.getElementById('refreshBtn').onclick = () => checkTunnel();
+
+// ── Tunnel polling ────────────────────────────────────────────────
+let pollTimer = null;
+let currentUrl = null;
+
+function startPolling() {
+  checkTunnel();
+  pollTimer = setInterval(checkTunnel, POLL_INTERVAL_MS);
+}
+
+async function checkTunnel() {
+  if (!GIST_ID || GIST_ID === 'YOUR_GIST_ID') {
+    setStatus('error', 'GIST_ID not configured in panel.html');
+    showPlaceholder('Edit panel.html and set GIST_ID.');
+    return;
+  }
+
+  try {
+    // Cache-bust so we always get fresh Gist content
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}?t=${Date.now()}`, {
+      headers: { 'Accept': 'application/vnd.github+json' },
+    });
+    if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+    const data = await res.json();
+    const raw = data.files?.['shikigami-tunnel.json']?.content;
+    if (!raw) {
+      setStatus('error', 'No tunnel data in Gist yet');
+      showPlaceholder('Bot has not run yet — launch it from the Launcher.');
+      return;
+    }
+
+    const info = JSON.parse(raw);
+    const ageMin = (Date.now() - new Date(info.updated).getTime()) / 60000;
+    const isLive = info.status === 'online' && ageMin < 10;
+
+    if (isLive) {
+      setStatus('live', `Panel live · updated ${Math.round(ageMin)}m ago`);
+      loadPanel(info.url);
+    } else {
+      setStatus('error', `Bot offline (last seen ${Math.round(ageMin)}m ago)`);
+      showPlaceholder(`Last run: ${new Date(info.updated).toLocaleString()}`);
+    }
+  } catch (e) {
+    setStatus('error', 'Could not reach GitHub: ' + e.message);
+    showPlaceholder('Network error — check connection.');
+  }
+}
+
+function loadPanel(url) {
+  if (url === currentUrl) return; // already loaded, don't reload
+  currentUrl = url;
+
+  const frame = document.getElementById('panelFrame');
+  const placeholder = document.getElementById('placeholder');
+  const openDirect = document.getElementById('openDirect');
+
+  // Try loading in iframe; localtunnel sometimes blocks iframes (X-Frame-Options).
+  // In that case we show a "open in new tab" fallback.
+  frame.onload = () => {
+    // If the frame loaded something (even an error page), show it
+    placeholder.style.display = 'none';
+    frame.style.display = 'block';
+  };
+  frame.onerror = () => {
+    // Blocked — fall back to direct link
+    showDirectLink(url);
+  };
+
+  frame.src = url;
+
+  // Fallback: if frame hasn't loaded in 6s, offer direct link
+  setTimeout(() => {
+    if (frame.style.display === 'none') showDirectLink(url);
+  }, 6000);
+
+  openDirect.href = url;
+  openDirect.style.display = 'inline-block';
+}
+
+function showDirectLink(url) {
+  const frame = document.getElementById('panelFrame');
+  frame.style.display = 'none';
+  const placeholder = document.getElementById('placeholder');
+  const detail = document.getElementById('placeholderDetail');
+  placeholder.style.display = 'flex';
+  detail.textContent = 'Iframe blocked by tunnel — open directly:';
+  document.getElementById('openDirect').href = url;
+  document.getElementById('openDirect').style.display = 'inline-block';
+}
+
+function showPlaceholder(detail) {
+  document.getElementById('panelFrame').style.display = 'none';
+  document.getElementById('placeholder').style.display = 'flex';
+  document.getElementById('placeholderDetail').textContent = detail;
+  document.getElementById('openDirect').style.display = 'none';
+  currentUrl = null;
+}
+
+function setStatus(state, text) {
+  const dot = document.getElementById('dot');
+  dot.className = 'dot ' + (state === 'live' ? 'live' : state === 'error' ? 'error' : '');
+  document.getElementById('connStatus').textContent = text;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>式神 · Launch</title>
+<style>
+  :root {
+    --ink: #0b0d12;
+    --paper: #12151c;
+    --paper-raised: #171b24;
+    --paper-line: #262b38;
+    --text: #e7e5df;
+    --text-dim: #8a8f9e;
+    --seal: #eedc82;
+    --seal-glow: rgba(238,220,130,0.25);
+    --jade: #4c9a7c;
+    --danger: #c1392b;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter', -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(ellipse 900px 500px at 50% -10%, rgba(193,57,43,0.07), transparent), var(--ink);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--paper-line);
+    border-radius: 12px;
+    padding: 40px 36px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  }
+  .logo {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .logo .kanji {
+    font-size: 42px;
+    line-height: 1;
+    color: var(--seal);
+    text-shadow: 0 0 24px var(--seal-glow);
+    font-family: serif;
+  }
+  .logo .sub {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-top: 8px;
+  }
+
+  /* --- gate (password screen) --- */
+  #gate { display: block; }
+  #panel { display: none; }
+
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .field input, .field select {
+    width: 100%;
+    background: var(--paper-raised);
+    border: 1px solid var(--paper-line);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--seal); }
+  .field select option { background: var(--paper-raised); }
+
+  .btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 6px;
+    border: none;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: opacity 0.15s, box-shadow 0.15s;
+  }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .btn-seal {
+    background: var(--seal);
+    color: #1a1400;
+  }
+  .btn-seal:not(:disabled):hover { box-shadow: 0 0 18px var(--seal-glow); }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--paper-line);
+    color: var(--text-dim);
+    margin-top: 10px;
+  }
+  .btn-ghost:hover { border-color: var(--seal); color: var(--seal); }
+
+  .msg {
+    font-size: 12px;
+    text-align: center;
+    margin-top: 14px;
+    min-height: 18px;
+  }
+  .msg.error { color: var(--danger); }
+  .msg.ok { color: var(--jade); }
+
+  /* --- launcher panel --- */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 24px;
+  }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .dot.live { background: var(--jade); box-shadow: 0 0 6px var(--jade); }
+  .dot.busy { background: var(--seal); box-shadow: 0 0 6px var(--seal-glow); }
+  .dot.error { background: var(--danger); }
+
+  .divider {
+    border: none;
+    border-top: 1px solid var(--paper-line);
+    margin: 20px 0;
+  }
+  .panel-link {
+    display: block;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-decoration: none;
+    margin-top: 10px;
+    transition: color 0.15s;
+  }
+  .panel-link:hover { color: var(--seal); }
+  .run-log {
+    background: var(--paper-raised);
+    border: 1px solid var(--paper-line);
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 10px 12px;
+    min-height: 54px;
+    max-height: 90px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="kanji">式神</div>
+    <div class="sub">Shikigami · Launcher</div>
+  </div>
+
+  <!-- ── GATE ── -->
+  <div id="gate">
+    <div class="field">
+      <label>Access Password</label>
+      <input type="password" id="gatePassword" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-seal" id="gateBtn">Unlock</button>
+    <div class="msg" id="gateMsg"></div>
+  </div>
+
+  <!-- ── LAUNCHER PANEL ── -->
+  <div id="panel">
+    <div class="status-bar">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">Checking last run…</span>
+    </div>
+
+    <div class="run-log" id="runLog">—</div>
+
+    <div class="field">
+      <label>Task</label>
+      <select id="taskSelect">
+        <option value="run">run — connect and stay online</option>
+        <option value="announce">announce — join, post, leave</option>
+        <option value="walk">walk — join, walk to base, leave</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Duration (minutes, max 120)</label>
+      <input type="number" id="durationInput" value="120" min="1" max="120">
+    </div>
+
+    <button class="btn btn-seal" id="launchBtn">Launch Bot</button>
+    <div class="msg" id="launchMsg"></div>
+
+    <hr class="divider">
+    <a class="panel-link" href="panel.html">Open Remote Panel →</a>
+    <button class="btn btn-ghost" id="lockBtn">Lock</button>
+  </div>
+</div>
+
+<script>
+// ── Configuration ──────────────────────────────────────────────────
+// Password hash: SHA-256 of "Swr_4590"
+// To change the password, run this in a browser console:
+//   crypto.subtle.digest('SHA-256', new TextEncoder().encode('YourNewPassword'))
+//     .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
+const PASSWORD_HASH = '991aaeef5b49a061b611ae34e68546c9f6549672489da40b58d37541e157cf65';
+
+// ── GitHub Actions dispatch settings ──────────────────────────────
+// Fill these in after creating the public repo.
+// REPO format: "username/shikigami-cloud"
+// TOKEN: a GitHub PAT with `actions:write` scope on the PUBLIC repo only.
+//        Store it here — it only has permission to trigger workflows, nothing else.
+//        Anyone who views source can see it, so scope it tightly (actions:write only).
+const GITHUB_REPO   = 'YOUR_USERNAME/shikigami-cloud';  // ← fill in
+const GITHUB_TOKEN  = 'YOUR_ACTIONS_DISPATCH_TOKEN';    // ← fill in
+// ──────────────────────────────────────────────────────────────────
+
+async function sha256hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str || ''));
+  return [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+// Unlock
+document.getElementById('gateBtn').onclick = unlock;
+document.getElementById('gatePassword').addEventListener('keydown', e => { if (e.key === 'Enter') unlock(); });
+
+async function unlock() {
+  const pw = document.getElementById('gatePassword').value || 'Swr_4590'; // fallback if blank
+  const hash = await sha256hex(pw);
+  if (hash === PASSWORD_HASH) {
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('panel').style.display = 'block';
+    sessionStorage.setItem('shiki-unlocked', '1');
+    checkStatus();
+  } else {
+    const msg = document.getElementById('gateMsg');
+    msg.className = 'msg error';
+    msg.textContent = 'Incorrect password.';
+  }
+}
+
+// Auto-restore session
+if (sessionStorage.getItem('shiki-unlocked')) {
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('panel').style.display = 'block';
+  checkStatus();
+}
+
+document.getElementById('lockBtn').onclick = () => {
+  sessionStorage.removeItem('shiki-unlocked');
+  document.getElementById('panel').style.display = 'none';
+  document.getElementById('gate').style.display = 'block';
+  document.getElementById('gatePassword').value = '';
+};
+
+// Dispatch workflow
+document.getElementById('launchBtn').onclick = launch;
+
+async function launch() {
+  const btn = document.getElementById('launchBtn');
+  const msg = document.getElementById('launchMsg');
+  const task = document.getElementById('taskSelect').value;
+  const duration = Math.min(120, Math.max(1, parseInt(document.getElementById('durationInput').value) || 120));
+
+  btn.disabled = true;
+  msg.className = 'msg';
+  msg.textContent = 'Dispatching…';
+
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/bot.yml/dispatches`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github+json',
+      },
+      body: JSON.stringify({
+        ref: 'main',
+        inputs: { task, duration_minutes: String(duration) },
+      }),
+    });
+
+    if (res.status === 204) {
+      msg.className = 'msg ok';
+      msg.textContent = '✓ Bot dispatched — check the panel in ~30s.';
+      logLine(`Dispatched: task=${task}, duration=${duration}min`);
+    } else {
+      const body = await res.text().catch(() => '');
+      msg.className = 'msg error';
+      msg.textContent = `Dispatch failed (${res.status}). Check GITHUB_REPO and GITHUB_TOKEN in index.html.`;
+      logLine(`Error ${res.status}: ${body}`);
+    }
+  } catch (e) {
+    msg.className = 'msg error';
+    msg.textContent = 'Network error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function logLine(text) {
+  const el = document.getElementById('runLog');
+  const ts = new Date().toLocaleTimeString();
+  el.textContent = `[${ts}] ${text}\n` + (el.textContent === '—' ? '' : el.textContent);
+}
+
+// Status — reads the same Gist that tunnel-reporter.js writes
+// Gist ID must match what's in your GitHub Actions secret.
+const GIST_ID = 'YOUR_GIST_ID'; // ← fill in (public gist, no token needed to read)
+
+async function checkStatus() {
+  if (!GIST_ID || GIST_ID === 'YOUR_GIST_ID') {
+    setStatus('idle', 'Gist ID not configured in index.html');
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      headers: { 'Accept': 'application/vnd.github+json' },
+    });
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    const raw = data.files?.['shikigami-tunnel.json']?.content;
+    if (!raw) { setStatus('idle', 'No run data yet'); return; }
+    const info = JSON.parse(raw);
+    const ageMin = (Date.now() - new Date(info.updated).getTime()) / 60000;
+    if (info.status === 'online' && ageMin < 10) {
+      setStatus('live', `Bot online · updated ${Math.round(ageMin)}m ago`);
+      logLine(`Panel URL: ${info.url}`);
+    } else {
+      setStatus('idle', `Last run: ${new Date(info.updated).toLocaleString()} (${info.status})`);
+    }
+  } catch (e) {
+    setStatus('error', 'Could not read status: ' + e.message);
+  }
+}
+
+function setStatus(state, text) {
+  const dot = document.getElementById('statusDot');
+  const span = document.getElementById('statusText');
+  dot.className = 'dot ' + (state === 'live' ? 'live' : state === 'error' ? 'error' : '');
+  span.textContent = text;
+}
+</script>
+</body>
+</html>
