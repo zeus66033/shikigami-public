@@ -252,13 +252,10 @@
 </div>
 
 <script>
-// ── Config ────────────────────────────────────────────────────────
 const PASSWORD_HASH  = '991aaeef5b49a061b611ae34e68546c9f6549672489da40b58d37541e157cf65';
-const GIST_ID        = 'de6e14e504678cad95fd9e87b827ffe7';
+const WORKER_URL     = 'https://shikigami-dispatch.zeus66033.workers.dev';
 const POLL_INTERVAL_MS = 30 * 1000;
-// ─────────────────────────────────────────────────────────────────
 
-// Declare these first so the sessionStorage restore block below can call startPolling safely
 let pollTimer  = null;
 let currentUrl = null;
 
@@ -267,7 +264,6 @@ async function sha256hex(str) {
   return [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2, '0')).join('');
 }
 
-// ── Gate ──────────────────────────────────────────────────────────
 document.getElementById('gateBtn').onclick = unlock;
 document.getElementById('gatePassword').addEventListener('keydown', e => { if (e.key === 'Enter') unlock(); });
 
@@ -302,11 +298,14 @@ document.getElementById('lockBtn').onclick = () => {
 
 document.getElementById('refreshBtn').onclick = () => checkTunnel();
 
-// ── Tunnel polling ────────────────────────────────────────────────
 function startPolling() {
- async function checkTunnel() {
+  checkTunnel();
+  pollTimer = setInterval(checkTunnel, POLL_INTERVAL_MS);
+}
+
+async function checkTunnel() {
   try {
-    const res = await fetch(`https://shikigami-dispatch.zeus66033.workers.dev/status`);
+    const res = await fetch(`${WORKER_URL}/status`);
     if (!res.ok) throw new Error(`Worker ${res.status}`);
     const info = JSON.parse(await res.text());
     if (!info.url) {
@@ -329,13 +328,6 @@ function startPolling() {
   }
 }
 
-// ── Panel loading ─────────────────────────────────────────────────
-// localtunnel free tier blocks cross-origin requests and iframes via
-// X-Frame-Options, so we can't embed the panel. Instead we show a
-// styled card with the tunnel URL and a button to open it directly.
-// The user visits the URL in a new tab, clicks through the localtunnel
-// IP confirm page once, and the panel loads normally.
-
 function loadPanel(url) {
   if (url === currentUrl) return;
   currentUrl = url;
@@ -345,8 +337,6 @@ function loadPanel(url) {
 function showTunnelConfirm(url) {
   document.getElementById('confirmTunnelUrl').textContent = url;
   document.getElementById('tunnelConfirm').classList.add('show');
-
-  // Auto-fetch public IP to pre-fill the hint
   fetch('https://api.ipify.org?format=json')
     .then(r => r.json())
     .then(d => { document.getElementById('confirmIpInput').value = d.ip || ''; })
@@ -356,9 +346,7 @@ function showTunnelConfirm(url) {
 document.getElementById('confirmIpBtn').onclick = () => {
   const url = currentUrl;
   document.getElementById('tunnelConfirm').classList.remove('show');
-  // Open the panel in a new tab — user clicks through the loca.lt IP page once
   window.open(url, '_blank');
-  // Show a "panel opened" placeholder with the direct link as fallback
   showPlaceholder('Panel opened in new tab. If it asked for your IP, enter it and the panel will load.');
   document.getElementById('openDirect').href = url;
   document.getElementById('openDirect').style.display = 'inline-block';
@@ -369,12 +357,10 @@ document.getElementById('skipConfirmBtn').onclick = () => {
   showDirectLink(currentUrl);
 };
 
-// ── Helpers ───────────────────────────────────────────────────────
 function showDirectLink(url) {
   document.getElementById('panelFrame').style.display = 'none';
-  const placeholder = document.getElementById('placeholder');
-  placeholder.style.display = 'flex';
-  document.getElementById('placeholderDetail').textContent = 'Iframe blocked — open directly:';
+  document.getElementById('placeholder').style.display = 'flex';
+  document.getElementById('placeholderDetail').textContent = 'Open directly:';
   document.getElementById('openDirect').href = url;
   document.getElementById('openDirect').style.display = 'inline-block';
 }
