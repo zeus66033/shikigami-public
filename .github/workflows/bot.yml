@@ -9,24 +9,19 @@ on:
         default: 'run'
         type: choice
         options:
-          - run        # connect and stay online for the full session
-          - announce   # join, post an announcement, leave
-          - walk       # join, walk to rally base, leave
+          - run
+          - announce
+          - walk
       duration_minutes:
         description: 'Max runtime in minutes (max 120)'
         required: false
         default: '120'
         type: string
 
-# No schedule by default — manual trigger only (Site A or GitHub app).
-# Uncomment and set a cron to auto-run:
-# schedule:
-#   - cron: '0 18 * * *'   # 18:00 UTC daily
-
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 130   # hard cap — slightly over max duration to clean up
+    timeout-minutes: 130
 
     steps:
       - name: Checkout public scaffolding
@@ -44,13 +39,14 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install localtunnel
+        run: npm install localtunnel
+
       - name: Install bot dependencies
         working-directory: bot
         run: |
           npm init -y
-          npm install mineflayer@latest mineflayer-pathfinder mineflayer-collectblock \
-  mineflayer-armor-manager mineflayer-tool minecraft-protocol \
-  minecraft-protocol-forge prismarine-item prismarine-nbt vec3
+          npm install mineflayer@latest mineflayer-pathfinder mineflayer-collectblock mineflayer-armor-manager mineflayer-tool minecraft-protocol minecraft-protocol-forge prismarine-item prismarine-nbt vec3
 
       - name: Write world.txt from secrets
         working-directory: bot
@@ -70,10 +66,15 @@ jobs:
           PANEL_PORT: '4590'
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-        run: node tunnel-reporter.js &
+        run: |
+          node tunnel-reporter.js > /tmp/tunnel.log 2>&1 &
+          echo "Tunnel PID: $!"
 
       - name: Wait for tunnel to come up
-        run: sleep 15
+        run: |
+          sleep 20
+          echo "--- tunnel log ---"
+          cat /tmp/tunnel.log || echo "(no log)"
 
       - name: Run bot
         working-directory: bot
@@ -87,3 +88,7 @@ jobs:
         run: |
           TIMEOUT=$(( ${DURATION_MINUTES:-120} * 60 ))
           timeout $TIMEOUT node shikigami.js || true
+
+      - name: Print tunnel log on finish
+        if: always()
+        run: cat /tmp/tunnel.log || echo "(no log)"
