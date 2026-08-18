@@ -304,28 +304,18 @@ document.getElementById('refreshBtn').onclick = () => checkTunnel();
 
 // ── Tunnel polling ────────────────────────────────────────────────
 function startPolling() {
-  checkTunnel();
-  pollTimer = setInterval(checkTunnel, POLL_INTERVAL_MS);
-}
-
-async function checkTunnel() {
+ async function checkTunnel() {
   try {
-    const res = await fetch(`https://api.github.com/gists/${GIST_ID}?t=${Date.now()}`, {
-      headers: { 'Accept': 'application/vnd.github+json' },
-    });
-    if (!res.ok) throw new Error(`GitHub API ${res.status}`);
-    const data = await res.json();
-    const raw = data.files?.['shikigami-tunnel.json']?.content;
-    if (!raw) {
-      setStatus('error', 'No tunnel data in Gist yet');
+    const res = await fetch(`https://shikigami-dispatch.zeus66033.workers.dev/status`);
+    if (!res.ok) throw new Error(`Worker ${res.status}`);
+    const info = JSON.parse(await res.text());
+    if (!info.url) {
+      setStatus('error', 'No tunnel data yet');
       showPlaceholder('Bot has not run yet — launch it from the Launcher.');
       return;
     }
-
-    const info = JSON.parse(raw);
     const ageMin = (Date.now() - new Date(info.updated).getTime()) / 60000;
     const isLive = info.status === 'online' && ageMin < 10;
-
     if (isLive) {
       setStatus('live', `Panel live · updated ${Math.round(ageMin)}m ago`);
       loadPanel(info.url);
@@ -334,7 +324,7 @@ async function checkTunnel() {
       showPlaceholder(`Last run: ${new Date(info.updated).toLocaleString()}`);
     }
   } catch (e) {
-    setStatus('error', 'Could not reach GitHub: ' + e.message);
+    setStatus('error', 'Could not reach worker: ' + e.message);
     showPlaceholder('Network error — check connection.');
   }
 }

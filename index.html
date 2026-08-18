@@ -241,59 +241,21 @@ async function unlock() {
     document.getElementById('gate').style.display = 'none';
     document.getElementById('panel').style.display = 'block';
     sessionStorage.setItem('shiki-unlocked', '1');
-    checkStatus();
-  } else {
-    const msg = document.getElementById('gateMsg');
-    msg.className = 'msg error';
-    msg.textContent = 'Incorrect password.';
-  }
-}
-
-if (sessionStorage.getItem('shiki-unlocked')) {
-  document.getElementById('gate').style.display = 'none';
-  document.getElementById('panel').style.display = 'block';
-  checkStatus();
-}
-
-document.getElementById('lockBtn').onclick = () => {
-  sessionStorage.removeItem('shiki-unlocked');
-  document.getElementById('panel').style.display = 'none';
-  document.getElementById('gate').style.display = 'block';
-  document.getElementById('gatePassword').value = '';
-};
-
-document.getElementById('launchBtn').onclick = launch;
-
-async function launch() {
-  const btn = document.getElementById('launchBtn');
-  const msg = document.getElementById('launchMsg');
-  const task = document.getElementById('taskSelect').value;
-  const duration = Math.min(120, Math.max(1, parseInt(document.getElementById('durationInput').value) || 120));
-
-  btn.disabled = true;
-  msg.className = 'msg';
-  msg.textContent = 'Dispatching…';
-
+    async function checkStatus() {
   try {
-    const res = await fetch(WORKER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task, duration_minutes: duration }),
-    });
-    const data = await res.json();
-    if (data.status === 204) {
-      msg.className = 'msg ok';
-      msg.textContent = '✓ Bot dispatched — check the panel in ~30s.';
-      logLine(`Dispatched: task=${task}, duration=${duration}min`);
+    const res = await fetch(`${WORKER_URL}/status`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const info = JSON.parse(await res.text());
+    if (!info.url) { setStatus('idle', 'No run data yet'); return; }
+    const ageMin = (Date.now() - new Date(info.updated).getTime()) / 60000;
+    if (info.status === 'online' && ageMin < 10) {
+      setStatus('live', `Bot online · updated ${Math.round(ageMin)}m ago`);
+      logLine(`Panel URL: ${info.url}`);
     } else {
-      msg.className = 'msg error';
-      msg.textContent = `Dispatch failed (${data.status}). Check Worker logs.`;
+      setStatus('idle', `Last run: ${new Date(info.updated).toLocaleString()} (${info.status})`);
     }
   } catch (e) {
-    msg.className = 'msg error';
-    msg.textContent = 'Network error: ' + e.message;
-  } finally {
-    btn.disabled = false;
+    setStatus('error', 'Could not read status: ' + e.message);
   }
 }
 
