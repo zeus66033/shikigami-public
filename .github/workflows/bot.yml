@@ -46,7 +46,7 @@ jobs:
         working-directory: bot
         run: |
           npm init -y
-          npm install mineflayer@latest mineflayer-pathfinder mineflayer-collectblock mineflayer-armor-manager mineflayer-tool minecraft-protocol minecraft-protocol-forge prismarine-item prismarine-nbt vec3
+          npm install mineflayer@4.37.1 minecraft-protocol@1.66.2 minecraft-data@3.113.2 mineflayer-pathfinder mineflayer-collectblock mineflayer-armor-manager mineflayer-tool minecraft-protocol-forge prismarine-item prismarine-nbt vec3
 
       - name: Write world.txt from secrets
         working-directory: bot
