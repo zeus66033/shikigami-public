@@ -1,45 +1,37 @@
 #!/usr/bin/env node
 // tunnel-reporter.js
-// Starts a localtunnel pointed at the panel port, then writes the live URL
-// to a GitHub Gist so Site B (panel-proxy) can read it. Re-reports every
-// 5 minutes so the URL is kept fresh in case the tunnel reconnects.
-//
-// Required env vars (all injected by the GitHub Actions workflow):
-//   PANEL_PORT   — port the shikigami panel listens on (default 4590)
-//   GIST_ID      — the GitHub Gist ID to update (create one manually, blank file)
-//   GIST_TOKEN   — PAT with gist write scope
+// Uses cloudflared quick tunnels — no account, no confirmation page, stable.
 
 const { execSync, spawn } = require('child_process');
 const https = require('https');
 
-const PANEL_PORT = parseInt(process.env.PANEL_PORT || '4590', 10);
-const GIST_ID = process.env.GIST_ID || '';
-const GIST_TOKEN = process.env.GIST_TOKEN || '';
-const REPORT_INTERVAL_MS = 5 * 60 * 1000; // re-write gist every 5 min
+const PANEL_PORT  = parseInt(process.env.PANEL_PORT || '4590', 10);
+const GIST_ID     = process.env.GIST_ID || '';
+const GIST_TOKEN  = process.env.GIST_TOKEN || '';
+const REPORT_INTERVAL_MS = 5 * 60 * 1000;
 
 if (!GIST_ID || !GIST_TOKEN) {
   console.error('[TUNNEL] GIST_ID and GIST_TOKEN must be set. Exiting.');
   process.exit(1);
 }
 
-// Install localtunnel if not present (Actions runner won't have it)
+// Install cloudflared if not present
 try {
-  execSync('lt --version', { stdio: 'ignore' });
+  execSync('cloudflared --version', { stdio: 'ignore' });
+  console.log('[TUNNEL] cloudflared already installed.');
 } catch {
-  console.log('[TUNNEL] Installing localtunnel...');
-  execSync('npm install -g localtunnel', { stdio: 'inherit' });
+  console.log('[TUNNEL] Installing cloudflared...');
+  execSync(
+    'curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared',
+    { stdio: 'inherit' }
+  );
 }
 
 function writeGist(url, status = 'online') {
   const body = JSON.stringify({
     files: {
       'shikigami-tunnel.json': {
-        content: JSON.stringify({
-          url,
-          status,
-          port: PANEL_PORT,
-          updated: new Date().toISOString(),
-        }, null, 2),
+        content: JSON.stringify({ url, status, port: PANEL_PORT, updated: new Date().toISOString() }, null, 2),
       },
     },
   });
@@ -59,7 +51,7 @@ function writeGist(url, status = 'online') {
   return new Promise((resolve, reject) => {
     const req = https.request(opts, (res) => {
       let data = '';
-      res.on('data', (c) => data += c);
+      res.on('data', c => data += c);
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           console.log(`[TUNNEL] Gist updated — url: ${url}, status: ${status}`);
@@ -77,76 +69,71 @@ function writeGist(url, status = 'online') {
 
 function startTunnel() {
   return new Promise((resolve, reject) => {
-    console.log(`[TUNNEL] Starting localtunnel on port ${PANEL_PORT}...`);
-    const lt = spawn('lt', ['--port', String(PANEL_PORT)], { stdio: ['ignore', 'pipe', 'pipe'] });
+    console.log(`[TUNNEL] Starting cloudflared tunnel on port ${PANEL_PORT}...`);
+    const cf = spawn('cloudflared', ['tunnel', '--url', `http://localhost:${PANEL_PORT}`], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     let resolved = false;
     let currentUrl = null;
 
-    lt.stdout.on('data', async (chunk) => {
+    const onData = async (chunk) => {
       const text = chunk.toString();
-      // localtunnel prints: "your url is: https://xxxxx.loca.lt"
-      const match = text.match(/your url is:\s*(https?:\/\/[^\s]+)/i);
+      process.stdout.write('[TUNNEL] ' + text);
+      // cloudflared prints the URL to stderr like:
+      // INF +--------------------------------------------------------------------------------------------+
+      // INF |  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |
+      // INF |  https://xxxx.trycloudflare.com                                                            |
+      const match = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
       if (match && !resolved) {
-        currentUrl = match[1].trim();
+        currentUrl = match[0].trim();
         resolved = true;
-        resolve({ lt, getUrl: () => currentUrl });
+        resolve({ cf, getUrl: () => currentUrl });
         try {
           await writeGist(currentUrl, 'online');
         } catch (e) {
           console.error('[TUNNEL] Initial gist write failed:', e.message);
         }
       }
-      process.stdout.write('[TUNNEL] ' + text);
+    };
+
+    cf.stdout.on('data', onData);
+    cf.stderr.on('data', onData); // cloudflared logs to stderr
+
+    cf.on('exit', (code) => {
+      if (!resolved) reject(new Error(`cloudflared exited early with code ${code}`));
+      else console.log(`[TUNNEL] cloudflared exited with code ${code}`);
     });
 
-    lt.stderr.on('data', (chunk) => {
-      process.stderr.write('[TUNNEL] ' + chunk.toString());
-    });
-
-    lt.on('exit', (code) => {
-      if (!resolved) reject(new Error(`localtunnel exited early with code ${code}`));
-      else console.log(`[TUNNEL] localtunnel exited with code ${code}`);
-    });
-
-    // Timeout if lt never gives us a URL
     setTimeout(() => {
-      if (!resolved) reject(new Error('localtunnel timed out — no URL received after 30s'));
-    }, 30000);
+      if (!resolved) reject(new Error('cloudflared timed out — no URL after 40s'));
+    }, 40000);
   });
 }
 
 async function main() {
-  const { lt, getUrl } = await startTunnel();
+  const { cf, getUrl } = await startTunnel();
 
-  // Periodically re-write the gist to confirm still alive
   const interval = setInterval(async () => {
-    try {
-      await writeGist(getUrl(), 'online');
-    } catch (e) {
-      console.error('[TUNNEL] Periodic gist update failed:', e.message);
-    }
+    try { await writeGist(getUrl(), 'online'); }
+    catch (e) { console.error('[TUNNEL] Periodic gist update failed:', e.message); }
   }, REPORT_INTERVAL_MS);
 
-  // On shutdown, mark offline in the gist
   const shutdown = async (signal) => {
     clearInterval(interval);
-    console.log(`[TUNNEL] ${signal} received — marking gist offline`);
-    try {
-      await writeGist(getUrl(), 'offline');
-    } catch {}
-    lt.kill();
+    console.log(`[TUNNEL] ${signal} — marking gist offline`);
+    try { await writeGist(getUrl(), 'offline'); } catch {}
+    cf.kill();
     process.exit(0);
   };
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
 
-  // Keep this script alive (the bot process runs concurrently via workflow steps)
-  await new Promise(() => {}); // never resolves — workflow timeout kills everything
+  await new Promise(() => {});
 }
 
-main().catch((err) => {
+main().catch(err => {
   console.error('[TUNNEL] Fatal:', err.message);
   process.exit(1);
 });
