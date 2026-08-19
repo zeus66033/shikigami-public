@@ -67,13 +67,7 @@ jobs:
           node tunnel-reporter.js > /tmp/tunnel.log 2>&1 &
           echo "Tunnel PID: $!"
 
-      - name: Wait for tunnel to come up
-        run: |
-          sleep 30
-          echo "--- tunnel log ---"
-          cat /tmp/tunnel.log || echo "(no log)"
-
-      - name: Run bot
+      - name: Start bot in background for debug
         working-directory: bot
         env:
           LICENSE_BYPASS: '1'
@@ -84,8 +78,43 @@ jobs:
           DURATION_MINUTES: ${{ github.event.inputs.duration_minutes || '120' }}
         run: |
           TIMEOUT=$(( ${DURATION_MINUTES:-120} * 60 ))
-          timeout $TIMEOUT node shikigami.js || true
+          timeout $TIMEOUT node shikigami.js > /tmp/bot.log 2>&1 &
+          echo "Bot PID: $!"
 
-      - name: Print tunnel log on finish
+      - name: Wait for bot and tunnel to come up
+        run: |
+          echo "Waiting 30s for bot and tunnel to initialize..."
+          sleep 30
+
+      - name: Debug - check what is listening
+        run: |
+          echo "=== Processes ==="
+          ps aux | grep node || echo "(no node processes)"
+          echo ""
+          echo "=== Listening ports ==="
+          ss -tlnp | grep -E "4590|LISTEN" || echo "(nothing listening)"
+          echo ""
+          echo "=== Curl panel ==="
+          curl -v --max-time 5 http://localhost:4590 2>&1 || echo "(panel not reachable)"
+          echo ""
+          echo "=== Bot log ==="
+          cat /tmp/bot.log || echo "(no bot log)"
+          echo ""
+          echo "=== Tunnel log ==="
+          cat /tmp/tunnel.log || echo "(no tunnel log)"
+
+      - name: Keep alive for remaining duration
+        run: |
+          DURATION_MINUTES=${{ github.event.inputs.duration_minutes || '120' }}
+          ELAPSED=1
+          TIMEOUT=$(( DURATION_MINUTES - ELAPSED ))
+          echo "Keeping job alive for ${TIMEOUT} more minutes..."
+          sleep $(( TIMEOUT * 60 )) || true
+
+      - name: Print final logs
         if: always()
-        run: cat /tmp/tunnel.log || echo "(no log)"
+        run: |
+          echo "=== Final bot log ==="
+          cat /tmp/bot.log || echo "(no log)"
+          echo "=== Final tunnel log ==="
+          cat /tmp/tunnel.log || echo "(no log)"
